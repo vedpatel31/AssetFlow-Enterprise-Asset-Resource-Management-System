@@ -14,9 +14,22 @@ import { User, UserRole, Asset, AssetCategory, AssetStatus, AssetCondition } fro
 interface AssetModuleProps {
   user: User;
   onActivityLogged: () => void;
+  preSelectedAssetId?: string | null;
+  clearPreSelectedAssetId?: () => void;
+  preFilledRegistrationCode?: string | null;
+  clearPreFilledRegistrationCode?: () => void;
+  onOpenScanner?: () => void;
 }
 
-export default function AssetModule({ user, onActivityLogged }: AssetModuleProps) {
+export default function AssetModule({ 
+  user, 
+  onActivityLogged,
+  preSelectedAssetId,
+  clearPreSelectedAssetId,
+  preFilledRegistrationCode,
+  clearPreFilledRegistrationCode,
+  onOpenScanner
+}: AssetModuleProps) {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [categories, setCategories] = useState<AssetCategory[]>([]);
   const [loading, setLoading] = useState(false);
@@ -46,8 +59,34 @@ export default function AssetModule({ user, onActivityLogged }: AssetModuleProps
     documents: "" // comma-separated strings
   });
 
+  useEffect(() => {
+    if (preSelectedAssetId && assets.length > 0) {
+      const target = assets.find(a => a.id === preSelectedAssetId);
+      if (target) {
+        loadAssetTimeline(target);
+      }
+      if (clearPreSelectedAssetId) {
+        clearPreSelectedAssetId();
+      }
+    }
+  }, [preSelectedAssetId, assets]);
+
+  useEffect(() => {
+    if (preFilledRegistrationCode) {
+      setForm(f => ({
+        ...f,
+        serialNumber: preFilledRegistrationCode
+      }));
+      setShowAddForm(true);
+      if (clearPreFilledRegistrationCode) {
+        clearPreFilledRegistrationCode();
+      }
+    }
+  }, [preFilledRegistrationCode]);
+
   const [formError, setFormError] = useState("");
   const [formSuccess, setFormSuccess] = useState("");
+  const [newCategoryName, setNewCategoryName] = useState("");
 
   const isManager = user.role === UserRole.ADMIN || user.role === UserRole.ASSET_MANAGER;
 
@@ -81,12 +120,41 @@ export default function AssetModule({ user, onActivityLogged }: AssetModuleProps
       return;
     }
 
+    let finalCategoryId = form.categoryId;
+
     try {
+      if (form.categoryId === "create_new") {
+        if (!newCategoryName.trim()) {
+          setFormError("Please enter a name for the new category.");
+          return;
+        }
+
+        const catRes = await fetch("/api/categories", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: newCategoryName.trim(),
+            actorUserId: user.id
+          })
+        });
+
+        const catData = await catRes.json();
+        if (!catRes.ok) {
+          throw new Error(catData.error || "Failed to create category");
+        }
+
+        finalCategoryId = catData.id;
+        // Prepend or append to categories list
+        setCategories(prev => [...prev, catData]);
+        setNewCategoryName("");
+      }
+
       const response = await fetch("/api/assets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
+          categoryId: finalCategoryId,
           purchaseCost: parseFloat(form.purchaseCost),
           documents: form.documents ? form.documents.split(",").map(d => d.trim()) : [],
           actorUserId: user.id
@@ -161,15 +229,25 @@ export default function AssetModule({ user, onActivityLogged }: AssetModuleProps
             </p>
           </div>
           <div className="flex items-center gap-2 w-full md:w-auto">
-            <div className="relative flex-1 md:w-64">
-              <Search size={14} className="absolute left-3 top-3.5 text-neutral-400" />
-              <input
-                type="text"
-                placeholder="Search tag, model, serial..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="w-full text-xs p-3 pl-9 border border-neutral-200 rounded-lg outline-indigo-600 font-medium"
-              />
+            <div className="flex items-center gap-1.5 w-full md:w-auto">
+              <div className="relative flex-1 md:w-64">
+                <Search size={14} className="absolute left-3 top-3.5 text-neutral-400" />
+                <input
+                  type="text"
+                  placeholder="Search tag, model, serial..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full text-xs p-3 pl-9 border border-neutral-200 rounded-lg outline-indigo-600 font-medium"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={onOpenScanner}
+                className="p-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 hover:text-indigo-800 rounded-lg border border-indigo-100 transition cursor-pointer shrink-0"
+                title="Scan Asset Tag (Camera/File)"
+              >
+                <QrCode size={15} />
+              </button>
             </div>
             {isManager && (
               <button
@@ -284,6 +362,7 @@ export default function AssetModule({ user, onActivityLogged }: AssetModuleProps
                     {categories.map(c => (
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
+                    <option value="create_new">+ Add New Category...</option>
                   </select>
                 </div>
                 <div>
@@ -298,6 +377,20 @@ export default function AssetModule({ user, onActivityLogged }: AssetModuleProps
                   />
                 </div>
               </div>
+
+              {form.categoryId === "create_new" && (
+                <div className="animate-in fade-in slide-in-from-top-1 duration-150">
+                  <label className="block text-neutral-500 mb-1">New Category Name *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Tablets, Wearables"
+                    value={newCategoryName}
+                    onChange={e => setNewCategoryName(e.target.value)}
+                    className="w-full p-2.5 border border-neutral-200 rounded-lg text-neutral-800 focus:outline-indigo-600"
+                  />
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>

@@ -8,7 +8,7 @@ import {
   Lock, Mail, User as UserIcon, ShieldCheck, 
   Sparkles, CheckCircle2, AlertCircle, RefreshCw, KeyRound 
 } from "lucide-react";
-import { User, UserRole, AppNotification, ActivityLog } from "./types.js";
+import { User, UserRole, AppNotification, ActivityLog, Asset } from "./types.js";
 
 // Import custom layout sub-modules
 import Sidebar from "./components/Sidebar.js";
@@ -21,6 +21,8 @@ import BookingModule from "./components/BookingModule.js";
 import MaintenanceModule from "./components/MaintenanceModule.js";
 import AuditModule from "./components/AuditModule.js";
 import ReportsModule from "./components/ReportsModule.js";
+import ScannerModal from "./components/ScannerModal.js";
+import AIAssistantChat from "./components/AIAssistantChat.js";
 
 export default function App() {
   // Authentication & Session
@@ -33,10 +35,59 @@ export default function App() {
   const [currentView, setView] = useState<string>("dashboard");
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(false);
 
+  // Scanning Integration state
+  const [scannerOpen, setScannerOpen] = useState<boolean>(false);
+  const [preSelectedAssetId, setPreSelectedAssetId] = useState<string | null>(null);
+  const [preSelectedCheckoutAssetId, setPreSelectedCheckoutAssetId] = useState<string | null>(null);
+  const [preSelectedReturnAssetId, setPreSelectedReturnAssetId] = useState<string | null>(null);
+  const [preSelectedTransferAssetId, setPreSelectedTransferAssetId] = useState<string | null>(null);
+  const [preSelectedMaintenanceAssetId, setPreSelectedMaintenanceAssetId] = useState<string | null>(null);
+  const [preFilledRegistrationCode, setPreFilledRegistrationCode] = useState<string | null>(null);
+
+  const handleScannerAction = (
+    action: "view" | "checkout" | "transfer" | "return" | "maintenance" | "register", 
+    asset: any, 
+    code?: string
+  ) => {
+    setScannerOpen(false);
+
+    // Reset previous states to guarantee change triggers
+    setPreSelectedAssetId(null);
+    setPreSelectedCheckoutAssetId(null);
+    setPreSelectedReturnAssetId(null);
+    setPreSelectedTransferAssetId(null);
+    setPreSelectedMaintenanceAssetId(null);
+    setPreFilledRegistrationCode(null);
+
+    // Queue new actions in next tick or immediate state setting
+    setTimeout(() => {
+      if (action === "view" && asset) {
+        setPreSelectedAssetId(asset.id);
+        setView("assets");
+      } else if (action === "checkout" && asset) {
+        setPreSelectedCheckoutAssetId(asset.id);
+        setView("allocations");
+      } else if (action === "transfer" && asset) {
+        setPreSelectedTransferAssetId(asset.id);
+        setView("allocations");
+      } else if (action === "return" && asset) {
+        setPreSelectedReturnAssetId(asset.id);
+        setView("allocations");
+      } else if (action === "maintenance" && asset) {
+        setPreSelectedMaintenanceAssetId(asset.id);
+        setView("maintenance");
+      } else if (action === "register" && code) {
+        setPreFilledRegistrationCode(code);
+        setView("assets");
+      }
+    }, 50);
+  };
+
   // Lists & Dynamic Feeds
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
 
   // Form parameters
   const [loginForm, setLoginForm] = useState({ usernameOrEmail: "", password: "" });
@@ -61,6 +112,13 @@ export default function App() {
       .catch(err => console.error(err));
   };
 
+  const loadAssets = () => {
+    fetch("/api/assets")
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setAssets(data))
+      .catch(err => console.error(err));
+  };
+
   // Auto load configurations & active session
   useEffect(() => {
     // If there is an existing session in localStorage, retrieve it
@@ -73,17 +131,20 @@ export default function App() {
 
     loadDepartments();
     fetchAuthStatus();
+    loadAssets();
   }, []);
 
   const refreshFeeds = async () => {
     if (!user) return;
     try {
-      const [resNotif, resLogs] = await Promise.all([
+      const [resNotif, resLogs, resAssets] = await Promise.all([
         fetch(`/api/notifications?userId=${user.id}`),
-        fetch("/api/activity-logs")
+        fetch("/api/activity-logs"),
+        fetch("/api/assets")
       ]);
       if (resNotif.ok) setNotifications(await resNotif.json());
       if (resLogs.ok) setActivityLogs(await resLogs.json());
+      if (resAssets.ok) setAssets(await resAssets.json());
     } catch (err) {
       console.error("Failed to sync audit logs and alert feeds", err);
     }
@@ -650,6 +711,7 @@ export default function App() {
           notifications={notifications}
           refreshNotifications={refreshFeeds}
           title={getViewTitle()}
+          onScanClick={() => setScannerOpen(true)}
         />
 
         {/* Scrollable Workspace Stage */}
@@ -675,6 +737,11 @@ export default function App() {
             <AssetModule
               user={user}
               onActivityLogged={refreshFeeds}
+              preSelectedAssetId={preSelectedAssetId}
+              clearPreSelectedAssetId={() => setPreSelectedAssetId(null)}
+              preFilledRegistrationCode={preFilledRegistrationCode}
+              clearPreFilledRegistrationCode={() => setPreFilledRegistrationCode(null)}
+              onOpenScanner={() => setScannerOpen(true)}
             />
           )}
 
@@ -682,6 +749,13 @@ export default function App() {
             <AllocationModule
               user={user}
               onActivityLogged={refreshFeeds}
+              preSelectedCheckoutAssetId={preSelectedCheckoutAssetId}
+              clearPreSelectedCheckoutAssetId={() => setPreSelectedCheckoutAssetId(null)}
+              preSelectedTransferAssetId={preSelectedTransferAssetId}
+              clearPreSelectedTransferAssetId={() => setPreSelectedTransferAssetId(null)}
+              preSelectedReturnAssetId={preSelectedReturnAssetId}
+              clearPreSelectedReturnAssetId={() => setPreSelectedReturnAssetId(null)}
+              onOpenScanner={() => setScannerOpen(true)}
             />
           )}
 
@@ -696,6 +770,8 @@ export default function App() {
             <MaintenanceModule
               user={user}
               onActivityLogged={refreshFeeds}
+              preSelectedMaintenanceAssetId={preSelectedMaintenanceAssetId}
+              clearPreSelectedMaintenanceAssetId={() => setPreSelectedMaintenanceAssetId(null)}
             />
           )}
 
@@ -739,6 +815,23 @@ export default function App() {
 
         </main>
       </div>
+
+      {scannerOpen && user && (
+        <ScannerModal
+          isOpen={scannerOpen}
+          onClose={() => setScannerOpen(false)}
+          assets={assets}
+          user={user}
+          onAction={handleScannerAction}
+        />
+      )}
+
+      {user && (
+        <AIAssistantChat
+          user={user}
+          onAssetRegistered={refreshFeeds}
+        />
+      )}
 
     </div>
   );

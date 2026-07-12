@@ -6,6 +6,7 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
+import { GoogleGenAI, Type } from "@google/genai";
 import { DB, hashPassword } from "./src/server/db.js";
 import { 
   UserRole, AssetStatus, AssetCondition, TransferStatus, 
@@ -1380,6 +1381,182 @@ async function startServer() {
   // --- ACTIVITY LOGS ---
   app.get("/api/activity-logs", (req, res) => {
     return res.json(DB.get().activityLogs);
+  });
+
+
+  // --- GEMINI AI ASSISTANT ENDPOINTS ---
+
+  // Lazy-loaded Gemini AI client
+  let aiClient: GoogleGenAI | null = null;
+  function getAiClient(): GoogleGenAI {
+    if (!aiClient) {
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        throw new Error("GEMINI_API_KEY environment variable is not configured. Please add it under Settings > Secrets.");
+      }
+      aiClient = new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          headers: {
+            "User-Agent": "aistudio-build",
+          },
+        },
+      });
+    }
+    return aiClient;
+  }
+
+  // Multimodal image-to-specification analyzer
+  app.post("/api/ai/analyze-device", async (req, res) => {
+    try {
+      const { image, mimeType } = req.body;
+      if (!image || !mimeType) {
+        return res.status(400).json({ error: "Missing required image or mimeType parameters" });
+      }
+
+      const ai = getAiClient();
+      
+      const prompt = `Analyze this image of a hardware/device/equipment/furniture asset. Extract or infer the model details, specs, category, and an estimated purchase price in USD. Be accurate and realistic. If you see text resembling a serial number, capture it, otherwise generate a realistic one based on manufacturer styles. Return the results in structured JSON format.`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: [
+          {
+            inlineData: {
+              data: image.split("base64,")[1] || image, // strip data url prefix if present
+              mimeType: mimeType
+            }
+          },
+          prompt
+        ],
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              name: {
+                type: Type.STRING,
+                description: "Brand and Model name of the device, e.g. Dell Latitude 7440, Logitech MX Master 3, iPad Pro"
+              },
+              categoryName: {
+                type: Type.STRING,
+                description: "Primary category of the device (e.g. Laptop, Desktop, Printer, Furniture, Mobile, Tablet, Accessories)"
+              },
+              purchaseCost: {
+                type: Type.NUMBER,
+                description: "Estimated retail cost or replacement value in USD as a number"
+              },
+              serialNumber: {
+                type: Type.STRING,
+                description: "Manufacturer serial number detected or a realistic mockup"
+              },
+              specs: {
+                type: Type.STRING,
+                description: "Inferred technical specifications or description (e.g. Intel Core i7, 16GB RAM, or Ergonomic Mesh, Adjustable)"
+              }
+            },
+            required: ["name", "categoryName", "purchaseCost", "serialNumber", "specs"]
+          }
+        }
+      });
+
+      const resultText = response.text;
+      if (!resultText) {
+        throw new Error("Gemini returned an empty response.");
+      }
+
+      const parsed = JSON.parse(resultText);
+      return res.json(parsed);
+    } catch (err: any) {
+      console.error("Failed to analyze device via image:", err);
+      return res.status(500).json({ error: err.message || "Failed to analyze device image" });
+    }
+  });
+
+  // Chat agent for natural language registrations
+  app.post("/api/ai/chat", async (req, res) => {
+    try {
+      const { message, history } = req.body;
+      if (!message) {
+        return res.status(400).json({ error: "Missing message parameter" });
+      }
+
+      const ai = getAiClient();
+      const db = DB.get();
+
+      // Gather current categories for prompt grounding
+      const categoryNames = db.assetCategories.map(c => c.name).join(", ");
+
+      const systemInstruction = `You are a helpful and conversational AI Asset Assistant for AssetFlow ERP.
+Your task is to assist users in managing, querying, and registering hardware assets in their inventory.
+Currently registered asset categories: ${categoryNames}.
+
+When a user mentions adding or registering a device (e.g., "add a Dell laptop costing 1500" or "register an office chair"), you must assist them by drafting a registration.
+If they specify details, extract them. For details they don't provide, make realistic assumptions (e.g. estimate price, generate a realistic manufacturer-styled serial number, choose/match the category like Laptop, Printer, Furniture, etc.).
+Set hasDraft to true and populate the draft object with these details.
+If they do not express any registration intent, set hasDraft to false and help answer their question or describe the system.
+
+Keep your response messages warm, highly professional, conversational, and helpful.`;
+
+      const formattedContents = [];
+      if (history && Array.isArray(history)) {
+        for (const turn of history) {
+          formattedContents.push({
+            role: turn.role === "user" ? "user" : "model",
+            parts: [{ text: turn.text }]
+          });
+        }
+      }
+      formattedContents.push({
+        role: "user",
+        parts: [{ text: message }]
+      });
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: formattedContents,
+        config: {
+          systemInstruction,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              message: {
+                type: Type.STRING,
+                description: "Conversational text reply to the user, answering their query or guiding them through registration."
+              },
+              hasDraft: {
+                type: Type.BOOLEAN,
+                description: "True if the message implies registering/creating a new hardware or asset device."
+              },
+              draft: {
+                type: Type.OBJECT,
+                description: "The populated registration details if hasDraft is true",
+                properties: {
+                  name: { type: Type.STRING, description: "Name of the asset" },
+                  categoryName: { type: Type.STRING, description: "Matching or recommended Category name" },
+                  purchaseCost: { type: Type.NUMBER, description: "Cost in USD as a number" },
+                  serialNumber: { type: Type.STRING, description: "Estimated or generated serial number" },
+                  specs: { type: Type.STRING, description: "Short technical specifications or description" }
+                }
+              }
+            },
+            required: ["message", "hasDraft"]
+          }
+        }
+      });
+
+      const resultText = response.text;
+      if (!resultText) {
+        throw new Error("Gemini returned an empty response.");
+      }
+
+      const parsed = JSON.parse(resultText);
+      return res.json(parsed);
+    } catch (err: any) {
+      console.error("AI Chatbot error:", err);
+      return res.status(500).json({ error: err.message || "Failed to process chat" });
+    }
   });
 
 

@@ -7,7 +7,8 @@ import React, { useState, useEffect } from "react";
 import { 
   ArrowLeftRight, CheckCircle, AlertCircle, Calendar, 
   User, RefreshCw, ChevronRight, CornerDownRight, 
-  Sparkles, CheckCircle2, ShieldCheck, ThumbsUp, Trash2
+  Sparkles, CheckCircle2, ShieldCheck, ThumbsUp, Trash2,
+  QrCode
 } from "lucide-react";
 import { 
   User as UserType, UserRole, Asset, Allocation, 
@@ -17,9 +18,26 @@ import {
 interface AllocationModuleProps {
   user: UserType;
   onActivityLogged: () => void;
+  preSelectedCheckoutAssetId?: string | null;
+  clearPreSelectedCheckoutAssetId?: () => void;
+  preSelectedTransferAssetId?: string | null;
+  clearPreSelectedTransferAssetId?: () => void;
+  preSelectedReturnAssetId?: string | null;
+  clearPreSelectedReturnAssetId?: () => void;
+  onOpenScanner?: () => void;
 }
 
-export default function AllocationModule({ user, onActivityLogged }: AllocationModuleProps) {
+export default function AllocationModule({ 
+  user, 
+  onActivityLogged,
+  preSelectedCheckoutAssetId,
+  clearPreSelectedCheckoutAssetId,
+  preSelectedTransferAssetId,
+  clearPreSelectedTransferAssetId,
+  preSelectedReturnAssetId,
+  clearPreSelectedReturnAssetId,
+  onOpenScanner
+}: AllocationModuleProps) {
   const [activeTab, setActiveTab] = useState<"active" | "checkout" | "transfers">("active");
   const [loading, setLoading] = useState(false);
 
@@ -51,6 +69,46 @@ export default function AllocationModule({ user, onActivityLogged }: AllocationM
     assetId: "",
     newHolderId: ""
   });
+
+  useEffect(() => {
+    if (preSelectedCheckoutAssetId) {
+      setActiveTab("checkout");
+      setCheckoutForm(f => ({
+        ...f,
+        assetId: preSelectedCheckoutAssetId
+      }));
+      if (clearPreSelectedCheckoutAssetId) {
+        clearPreSelectedCheckoutAssetId();
+      }
+    }
+  }, [preSelectedCheckoutAssetId]);
+
+  useEffect(() => {
+    if (preSelectedTransferAssetId) {
+      setActiveTab("transfers");
+      setTransferForm(f => ({
+        ...f,
+        assetId: preSelectedTransferAssetId
+      }));
+      if (clearPreSelectedTransferAssetId) {
+        clearPreSelectedTransferAssetId();
+      }
+    }
+  }, [preSelectedTransferAssetId]);
+
+  useEffect(() => {
+    if (preSelectedReturnAssetId) {
+      setActiveTab("active");
+      setReturnForm(f => ({
+        ...f,
+        assetId: preSelectedReturnAssetId
+      }));
+      setSuccessMsg(`Asset selected for return. Use the CHECK-IN button on the matched row below.`);
+      if (clearPreSelectedReturnAssetId) {
+        clearPreSelectedReturnAssetId();
+      }
+    }
+  }, [preSelectedReturnAssetId]);
 
   const [rejectReason, setRejectReason] = useState("");
   const [selectedTransferForReject, setSelectedTransferForReject] = useState<string | null>(null);
@@ -335,7 +393,7 @@ export default function AllocationModule({ user, onActivityLogged }: AllocationM
             Allocate physical assets, process return checks, and manage role-based multi-tier custody transfer pipelines.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
           <button
             onClick={() => setActiveTab("active")}
             className={`px-4 py-2 text-xs font-semibold rounded-lg transition ${
@@ -359,6 +417,15 @@ export default function AllocationModule({ user, onActivityLogged }: AllocationM
             }`}
           >
             Transfer Requests ({transfers.filter(t => t.status !== TransferStatus.APPROVED_AM && t.status !== TransferStatus.REJECTED).length})
+          </button>
+          <button
+            type="button"
+            onClick={onOpenScanner}
+            className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-lg text-xs font-bold border border-indigo-100 transition cursor-pointer flex items-center gap-1.5 shrink-0"
+            title="Scan Tag to Checkout/Transfer/Return"
+          >
+            <QrCode size={13} />
+            <span>Scan Tag</span>
           </button>
         </div>
       </div>

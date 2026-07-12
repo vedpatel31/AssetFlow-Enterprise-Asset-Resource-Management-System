@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { Bell, CheckCircle2, CloudLightning, RefreshCw, UserCheck } from "lucide-react";
+import { Bell, CheckCircle2, CloudLightning, RefreshCw, UserCheck, QrCode } from "lucide-react";
 import { AppNotification, User } from "../types.js";
 
 interface HeaderProps {
@@ -12,13 +12,15 @@ interface HeaderProps {
   notifications: AppNotification[];
   refreshNotifications: () => void;
   title: string;
+  onScanClick?: () => void;
 }
 
 export default function Header({
   user,
   notifications,
   refreshNotifications,
-  title
+  title,
+  onScanClick
 }: HeaderProps) {
   const [showNotifications, setShowNotifications] = useState(false);
   const unreadCount = notifications.filter(n => !n.isRead).length;
@@ -47,6 +49,17 @@ export default function Header({
       </div>
 
       <div className="flex items-center gap-4">
+        {onScanClick && (
+          <button
+            onClick={onScanClick}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 hover:text-indigo-800 rounded-lg text-xs font-bold border border-indigo-100 transition cursor-pointer"
+            title="Scan Asset Tag Barcode or QR Code"
+          >
+            <QrCode size={14} />
+            <span className="hidden sm:inline">Scan Tag</span>
+          </button>
+        )}
+
         {/* Notifications Dropdown Container */}
         <div className="relative">
           <button

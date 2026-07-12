@@ -1,6 +1,10 @@
 {
-  "name": "AssetFlow",
-  "description": "An Enterprise Asset & Resource Management System for managing physical assets, shared resources, maintenance, transfers, and audit workflows.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "name": "Remix: AssetFlow",
+  "description": "An Enterprise Asset \u0026 Resource Management System for managing physical assets, shared resources, maintenance, transfers, and audit workflows.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

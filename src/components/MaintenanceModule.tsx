@@ -13,9 +13,16 @@ import { User as UserType, UserRole, Asset, MaintenanceRequest, MaintenanceStatu
 interface MaintenanceModuleProps {
   user: UserType;
   onActivityLogged: () => void;
+  preSelectedMaintenanceAssetId?: string | null;
+  clearPreSelectedMaintenanceAssetId?: () => void;
 }
 
-export default function MaintenanceModule({ user, onActivityLogged }: MaintenanceModuleProps) {
+export default function MaintenanceModule({ 
+  user, 
+  onActivityLogged,
+  preSelectedMaintenanceAssetId,
+  clearPreSelectedMaintenanceAssetId
+}: MaintenanceModuleProps) {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [requests, setRequests] = useState<MaintenanceRequest[]>([]);
   const [employees, setEmployees] = useState<UserType[]>([]);
@@ -26,6 +33,15 @@ export default function MaintenanceModule({ user, onActivityLogged }: Maintenanc
     assetId: "",
     description: ""
   });
+
+  useEffect(() => {
+    if (preSelectedMaintenanceAssetId) {
+      setForm(f => ({ ...f, assetId: preSelectedMaintenanceAssetId }));
+      if (clearPreSelectedMaintenanceAssetId) {
+        clearPreSelectedMaintenanceAssetId();
+      }
+    }
+  }, [preSelectedMaintenanceAssetId]);
 
   const [updateStatusForm, setUpdateStatusForm] = useState({
     requestId: "",
