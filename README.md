@@ -378,7 +378,7 @@ assetflow/
 └── README.md
 🚀 Getting Started
 Clone the repository
-git clone https://github.com/your-username/assetflow.git
+git clone https://github.com/vedpatel31/AssetFlow-Enterprise-Asset-Resource-Management-System
 cd assetflow
 Install dependencies
 npm install
