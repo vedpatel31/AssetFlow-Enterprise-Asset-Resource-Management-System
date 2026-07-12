@@ -1,0 +1,239 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  Admin
+  Asset_Manager
+  Department_Head
+  Employee
+}
+
+enum AssetStatus {
+  Available
+  Allocated
+  Reserved
+  Under_Maintenance
+  Lost
+  Retired
+  Disposed
+}
+
+enum AssetCondition {
+  Excellent
+  Good
+  Damaged
+}
+
+enum TransferStatus {
+  Requested
+  Approved_Dept_Head
+  Approved_Asset_Manager
+  Rejected
+}
+
+enum MaintenanceStatus {
+  Pending
+  Approved
+  Rejected
+  Assigned
+  In_Progress
+  Resolved
+}
+
+enum AuditCycleStatus {
+  Draft
+  Active
+  Completed
+}
+
+enum AuditItemStatus {
+  Pending
+  Verified
+  Missing
+  Damaged
+}
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  username     String    @unique
+  passwordHash String
+  name         String
+  role         UserRole  @default(Employee)
+  departmentId String?
+  department   Department? @relation("UserDepartment", fields: [departmentId], references: [id])
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  allocations         Allocation[]         @relation("EmployeeAllocations")
+  allocatedByRecords  Allocation[]         @relation("AllocatedByRecords")
+  transfersCurrent    Transfer[]           @relation("CurrentHolderTransfers")
+  transfersNew        Transfer[]           @relation("NewHolderTransfers")
+  transfersRequested  Transfer[]           @relation("RequesterTransfers")
+  bookings            Booking[]
+  maintenanceReports  MaintenanceRequest[] @relation("ReporterMaintenance")
+  auditedItems        AuditItem[]          @relation("AuditorItems")
+  notifications       Notification[]
+  activityLogs        ActivityLog[]
+  deptHeadFor         Department[]         @relation("DepartmentHead")
+}
+
+model Department {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  parentId  String?
+  parent    Department? @relation("DepartmentHierarchy", fields: [parentId], references: [id])
+  children  Department[] @relation("DepartmentHierarchy")
+  headId    String?  @unique
+  head      User?    @relation("DepartmentHead", fields: [headId], references: [id])
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  users     User[]   @relation("UserDepartment")
+}
+
+model AssetCategory {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  assets    Asset[]
+}
+
+model Asset {
+  id           String         @id @default(uuid())
+  name         String
+  categoryId   String
+  category     AssetCategory  @relation(fields: [categoryId], references: [id])
+  tag          String         @unique // AF-0001
+  serialNumber String         @unique
+  condition    AssetCondition @default(Excellent)
+  location     String
+  status       AssetStatus    @default(Available)
+  purchaseDate DateTime
+  purchaseCost Decimal
+  isShared     Boolean        @default(false)
+  image        String?
+  warrantyExpiry DateTime?
+  documents    String[]
+  createdAt    DateTime       @default(now())
+
+  allocations Allocations[]
+  transfers   Transfer[]
+  bookings    Booking[]
+  maintenance MaintenanceRequest[]
+  auditItems  AuditItem[]
+}
+
+model Allocations {
+  id                 String         @id @default(uuid())
+  assetId            String
+  asset              Asset          @relation(fields: [assetId], references: [id])
+  employeeId         String
+  employee           User           @relation("EmployeeAllocations", fields: [employeeId], references: [id])
+  allocatedById      String
+  allocatedBy        User           @relation("AllocatedByRecords", fields: [allocatedById], references: [id])
+  allocatedDate      DateTime       @default(now())
+  expectedReturnDate DateTime
+  actualReturnDate   DateTime?
+  conditionOut       AssetCondition
+  conditionIn        AssetCondition?
+  notes              String?
+}
+
+model Transfer {
+  id              String         @id @default(uuid())
+  assetId         String
+  asset           Asset          @relation(fields: [assetId], references: [id])
+  currentHolderId String
+  currentHolder   User           @relation("CurrentHolderTransfers", fields: [currentHolderId], references: [id])
+  newHolderId     String
+  newHolder       User           @relation("NewHolderTransfers", fields: [newHolderId], references: [id])
+  requesterId     String
+  requester       User           @relation("RequesterTransfers", fields: [requesterId], references: [id])
+  status          TransferStatus @default(Requested)
+  createdAt       DateTime       @default(now())
+}
+
+model Booking {
+  id        String   @id @default(uuid())
+  assetId   String
+  asset     Asset    @relation(fields: [assetId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  title     String
+  startTime DateTime
+  endTime   DateTime
+  status    String   @default("Confirmed")
+  createdAt DateTime @default(now())
+}
+
+model MaintenanceRequest {
+  id          String            @id @default(uuid())
+  assetId     String
+  asset       Asset             @relation(fields: [assetId], references: [id])
+  reporterId  String
+  reporter    User              @relation("ReporterMaintenance", fields: [reporterId], references: [id])
+  description String
+  status      MaintenanceStatus @default(Pending)
+  technician  String?
+  assignedDate DateTime?
+  resolvedDate DateTime?
+  notes       String?
+  createdAt   DateTime          @default(now())
+}
+
+model AuditCycle {
+  id                String           @id @default(uuid())
+  name              String
+  createdBy         String
+  status            AuditCycleStatus @default(Draft)
+  startDate         DateTime
+  endDate           DateTime
+  completedDate     DateTime?
+  discrepancyReport Json?
+  createdAt         DateTime         @default(now())
+  items             AuditItem[]
+}
+
+model AuditItem {
+  id           String          @id @default(uuid())
+  auditCycleId String
+  auditCycle   AuditCycle      @relation(fields: [auditCycleId], references: [id])
+  assetId      String
+  asset        Asset           @relation(fields: [assetId], references: [id])
+  status       AuditItemStatus @default(Pending)
+  verifiedById String?
+  verifiedBy   User?           @relation("AuditorItems", fields: [verifiedById], references: [id])
+  verifiedDate DateTime?
+  notes        String?
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  message   String
+  type      String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  action    String
+  ipAddress String
+  module    String
+  createdAt DateTime @default(now())
+}
