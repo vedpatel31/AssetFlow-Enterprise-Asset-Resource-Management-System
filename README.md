@@ -452,3 +452,7 @@ Multi-Language Support
 Email & SMS Notifications
 Calendar Integrations
 RFID Asset Tracking
+
+
+
+Live project URL : https://assetflow-2.ai.studio
